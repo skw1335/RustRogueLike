@@ -30,6 +30,7 @@ pub mod saveload_system;
 pub mod random_table;
 pub mod particle_system;
 pub mod map_builders;
+pub mod rex_assets;
 
 const SHOW_MAPGEN_VISUALIZER : bool = true;
 
@@ -104,6 +105,14 @@ impl GameState for State {
                 let positions = self.ecs.read_storage::<Position>();
                 let renderables = self.ecs.read_storage::<Renderable>();
                 let map = self.ecs.fetch::<Map>();
+                
+
+
+
+
+
+
+
                 let mut data = (&positions, &renderables).join().collect::<Vec<_>>();
                     data.sort_by(|&a, &b| b.1.render_order.cmp(&a.1.render_order) );
                     for (pos, render) in data.iter() {
@@ -232,7 +241,9 @@ impl GameState for State {
                     gui::GameOverResult::NoSelection => {}
                     gui::GameOverResult::QuitToMenu => {
                         self.game_over_cleanup();
-                        newrunstate = RunState::MainMenu{ menu_selection: gui::MainMenuSelection::NewGame };
+                        newrunstate = RunState::MapGeneration;
+                        self.mapgen_next_state = Some(RunState::MainMenu{ menu_selection: 
+                            gui::MainMenuSelection::NewGame });
                     }
                 }
             }
@@ -319,7 +330,7 @@ impl State {
         // Build a new map and place the player
         let current_depth;
         {
-            let mut worldmap_resource = self.ecs.fetch::<Map>();
+            let worldmap_resource = self.ecs.fetch::<Map>();
             current_depth = worldmap_resource.depth;
         }
         self.generate_world_map(current_depth + 1);
@@ -334,7 +345,25 @@ impl State {
             player_health.hp = i32::max(player_health.hp, player_health.max_hp / 2);
         }
     }
-    
+        fn game_over_cleanup(&mut self) {
+        // Delete everything
+        let mut to_delete = Vec::new();
+        for e in self.ecs.entities().join() {
+            to_delete.push(e);
+        }
+        for del in to_delete.iter() {
+            self.ecs.delete_entity(*del).expect("Deletion failed");
+        }
+        // Spawn a new player
+        {
+            let player_entity = spawner::player(&mut self.ecs, 0, 0);
+            let mut player_entity_writer = self.ecs.write_resource::<Entity>();
+            *player_entity_writer = player_entity;
+        }
+        // Build a new map and place the player
+        self.generate_world_map(1)
+    }
+
     fn generate_world_map(&mut self, new_depth : i32) {
         self.mapgen_index = 0;
         self.mapgen_timer = 0.0;
@@ -372,26 +401,6 @@ impl State {
         }
     }
 
-    fn game_over_cleanup(&mut self) {
-        // Delete everything
-        let mut to_delete = Vec::new();
-        for e in self.ecs.entities().join() {
-            to_delete.push(e);
-        }
-        for del in to_delete.iter() {
-            self.ecs.delete_entity(*del).expect("Deletion failed");
-        }
-        
-        // Spawn a new player
-        {
-            let player_entity = spawner::player(&mut self.ecs, 0, 0);
-            let mut player_entity_writer = self.ecs.write_resource::<Entity>();
-            *player_entity_writer = player_entity;
-        }
-        
-        // Build a new map and place the player
-        self.generate_world_map(1);
-    }
 }
 
 fn main() -> rltk::BError {
@@ -437,7 +446,7 @@ fn main() -> rltk::BError {
     gs.ecs.register::<WantsToRemoveItem>();
     gs.ecs.register::<ParticleLifetime>();
     gs.ecs.register::<MagicMapper>();
-
+    
     gs.ecs.insert(SimpleMarkerAllocator::<SerializeMe>::new());
 
     gs.ecs.insert(Map::new(1));
@@ -448,7 +457,8 @@ fn main() -> rltk::BError {
     gs.ecs.insert(RunState::MapGeneration{} );
     gs.ecs.insert(gamelog::GameLog{ entries : vec!["Welcome to Rusty Roguelike".to_string()] });
     gs.ecs.insert(particle_system::ParticleBuilder::new());
-    
+    gs.ecs.insert(rex_assets::RexAssets::new()); 
+  
     gs.generate_world_map(1);
 
     rltk::main_loop(context, gs)

@@ -6,6 +6,9 @@ use cellular_automata::CellularAutomataBuilder;
 mod common;
 use common::*;
 use specs::prelude::*;
+mod waveform_collapse;
+use waveform_collapse::*;
+use specs::prelude::*;
 
 pub trait MapBuilder {
     fn build_map(&mut self);
@@ -17,10 +20,21 @@ pub trait MapBuilder {
 }
 
 pub fn random_builder(new_depth: i32) -> Box<dyn MapBuilder> {
-  //  Box::new(SimpleMapBuilder::new(new_depth))
-    Box::new(CellularAutomataBuilder::new(new_depth))
+    let mut rng = rltk::RandomNumberGenerator::new();
+    let builder = rng.roll_dice(1,3);
+    let mut result : Box<dyn MapBuilder>;
+    match builder {
+        1 => { result = Box::new(SimpleMapBuilder::new(new_depth)); }
+        2 => { result = Box::new(CellularAutomataBuilder::new(new_depth)); }
+        _ => { result = Box::new(WaveformCollapseBuilder::test_map(new_depth)); }
+    }
+    
+    if rng.roll_dice(1, 3)==1 {
+        result = Box::new(WaveformCollapseBuilder::derived_map(new_depth, result));
+    } 
+     
+    result
 }
-
 
 
 

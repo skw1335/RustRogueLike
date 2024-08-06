@@ -1,10 +1,9 @@
-use super::{MapBuilder, Map, Rect, apply_room_to_map,
+use super::{MapBuilder, Map, 
+    generate_voronoi_spawn_regions, remove_unreachable_areas_returning_most_distant,
 TileType, Position, spawner, SHOW_MAPGEN_VISUALIZER};
 use rltk::RandomNumberGenerator;
 use specs::prelude::*;
 use std::collections::HashMap;
-use std::time::Duration;
-const MIN_ROOM_SIZE : i32 = 8;
 
 pub struct CellularAutomataBuilder { 
     map : Map, 
@@ -59,6 +58,7 @@ impl CellularAutomataBuilder {
             noise_areas : HashMap::new()
         }
     }
+    #[allow(clippy::map_entry)]
     fn build(&mut self) {
         let mut rng = RandomNumberGenerator::new();
         
@@ -102,91 +102,24 @@ impl CellularAutomataBuilder {
             self.map.tiles = newtiles.clone();
             self.take_snapshot();
         }
+
+
      // Placing the Player
-     self.starting_position = Position { x: self.map.width / 2, y: self.map.height / 2 };
-     let mut start_idx = self.map.xy_idx(self.starting_position.x, self.starting_position.y);
-     while self.map.tiles[start_idx] != TileType::Floor {
-         self.starting_position.y += 1;
-         start_idx = self.map.xy_idx(self.starting_position.x, self.starting_position.y);
-     }
-     //Placing the exit
-     let mut rng = RandomNumberGenerator::new();
-     //let roll = rng.roll_dice(1, 4);
-     let roll = 1;
-     // Clear a path to the exit
-     match roll {
-        1 => { 
-            let edge = self.map.height / 2;
-            let width = (self.map.width-1) / 2;
-            for i in 0..width { 
-                let path_idx = self.map.xy_idx(i, edge);
-                    if i == 0 {
-                        self.map.tiles[path_idx] = TileType::Floor;
-                    }
-                    if i == 1 {
-                        self.map.tiles[path_idx] = TileType::DownStairs;
-                    }
-                    if self.map.tiles[path_idx] == TileType::Wall { 
-                        self.map.tiles[path_idx] = TileType::Floor
-                    }
-                    if i > 5 && self.map.tiles[path_idx] == TileType::Floor {
-                        break
-                    }
-                }
-        }
-         
-        2 => { 
-            let edge = self.map.width / 2;
-            let height = self.map.height / 2;
-            for i in 0..height {
-                let path_idx = self.map.xy_idx(edge, i);
-                self.map.tiles[path_idx] = TileType::Floor
-                }
-           
-        }
-        3 => { 
-            let edge = self.map.height / 2;
-            let width = self.map.width / 2;
-            for i in width..self.map.width {
-                let path_idx = self.map.xy_idx(i, edge);
-                self.map.tiles[path_idx] = TileType::Floor
-                }
-            
-        }
-        _ => {
-            let edge = self.map.width / 2;
-            let height = self.map.height / 2;
-            for i in height..self.map.height  { 
-                let path_idx = self.map.xy_idx(edge, i);
-                self.map.tiles[path_idx] = TileType::Floor
-                }
-           
-        }
-    }
+        self.starting_position = Position { x: self.map.width / 2, y: self.map.height / 2 };
+        let mut start_idx = self.map.xy_idx(self.starting_position.x, self.starting_position.y);
+        while self.map.tiles[start_idx] != TileType::Floor {
+            self.starting_position.x -= 1;
+            start_idx = self.map.xy_idx(self.starting_position.x, self.starting_position.y);
+     }  
+        self.take_snapshot();
+        
+        let exit_tile = remove_unreachable_areas_returning_most_distant(&mut self.map, start_idx);
+        self.take_snapshot();
 
-     self.take_snapshot();
-    
-     // Build a noise map for spawning entities 
-     let mut noise = rltk::FastNoise::seeded(rng.roll_dice(1, 65536) as u64);
-     noise.set_noise_type(rltk::NoiseType::Cellular);
-     noise.set_frequency(0.08);
-     noise.set_cellular_distance_function(rltk::CellularDistanceFunction::Euclidean);
+        self.map.tiles[exit_tile] = TileType::DownStairs;
+        self.take_snapshot();
 
-     for y in 1 .. self.map.height-1 {
-         for x in 1 .. self.map.width-1 {
-             let idx = self.map.xy_idx(x, y);
-             if self.map.tiles[idx] == TileType::Floor {
-                 let cell_value_f = noise.get_noise(x as f32, y as f32) * 10240.0;
-                 let cell_value = cell_value_f as i32;
 
-                 if self.noise_areas.contains_key(&cell_value) {
-                     self.noise_areas.get_mut(&cell_value).unwrap().push(idx);
-                 } else {
-                     self.noise_areas.insert(cell_value, vec![idx]);
-                    }
-                }
-            }
-        }
+        self.noise_areas = generate_voronoi_spawn_regions(&self.map, &mut rng);
     }
 }
-
